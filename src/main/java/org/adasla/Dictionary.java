@@ -1,21 +1,21 @@
 package org.adasla;
 
-import org.apache.commons.lang3.tuple.Pair;
-
 import java.io.*;
 import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 public class Dictionary {
     private final List<Word> words;
-    private final Map<Character, Long> freqs;
-    private final Map<Pair<Character, Integer>, Long> freqPosition;
+    private final long[] freqs;
+    private final long[][] freqPosition;
 
     public Dictionary(String filePath) {
-        words = readWords(filePath);
-        freqs = computeFrequency(Word::getChars);
-        freqPosition = computeFrequency(Word::getCharsWithPosition);
+        this(readWords(filePath));
+    }
+
+    public Dictionary(List<Word> words) {
+        this.words = words;
+        freqs = computeFrequency();
+        freqPosition = computeFrequencyWithPosition();
     }
 
     private static List<Word> readWords(String filePath) {
@@ -35,25 +35,54 @@ public class Dictionary {
         return words;
     }
 
-    private <T> Map<T, Long> computeFrequency(Function<Word, Collection<T>> getKey) {
-        Map<T, Long> map = new HashMap<>();
-
-        words.stream()
-                .map(getKey)
-                .flatMap(Collection::stream)
-                .forEach(character -> map.merge(character, 1L, Long::sum));
-
-        return map;
+    private long[] computeFrequency() {
+        long[] freq = new long[App.UNICODE_CODE_LIMIT];
+        words.forEach(word -> {
+            List<Character> characters = word.getCharacterSet().asList();
+            for (Character character : characters) {
+                freq[(int) character]++;
+            }
+        });
+        return freq;
     }
 
-    public long calcScoreWithPosition(List<Word> words) {
-        Set<Pair<Character, Integer>> positions = words.stream().map(Word::getCharsWithPosition).flatMap(Collection::stream).collect(Collectors.toSet());
-        return positions.stream().map(freqPosition::get).reduce(0L, Long::sum);
+    private long[][] computeFrequencyWithPosition() {
+        long[][] freq = new long[App.WORD_LENGTH][App.UNICODE_CODE_LIMIT];
+        words.forEach(word -> {
+            List<Character> characters = word.getCharacterSet().asList();
+            for (int i = 0; i < characters.size(); i++) {
+                freq[i][(int) characters.get(i)]++;
+            }
+        });
+        return freq;
     }
 
     public long calcBasicScore(List<Word> words) {
-        Set<Character> chars = words.stream().map(Word::getChars).flatMap(Collection::stream).collect(Collectors.toSet());
-        return chars.stream().map(freqs::get).reduce(0L, Long::sum);
+        long result = 0L;
+        CharacterSet characterSet = new CharacterSet();
+        for (Word word : words) {
+            characterSet.add(word.getText());
+        }
+        List<Character> characters = characterSet.asList();
+        for (Character character : characters) {
+            result += freqs[character];
+        }
+        return result;
+    }
+
+    public long calcScoreWithPosition(List<Word> words) {
+        long result = 0L;
+        CharacterSetWithPosition setWithPosition = new CharacterSetWithPosition();
+        for (Word word : words) {
+            setWithPosition.add(word.getText());
+        }
+        for (int i = 0; i < App.WORD_LENGTH; i++) {
+            List<Character> characters = setWithPosition.getCharacterSets()[i].asList();
+            for (Character character : characters) {
+                result += freqPosition[i][character];
+            }
+        }
+        return result;
     }
 
     public List<Word> getWords() {

@@ -1,7 +1,6 @@
 package org.adasla;
 
 import com.google.common.collect.MinMaxPriorityQueue;
-import com.google.common.collect.Sets;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.commons.lang3.tuple.Pair;
@@ -11,8 +10,11 @@ import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 public class App {
+    public static final int SPAM_LIMIT = 1000;
+    public static final int WORD_LIMIT = 150000;
+    public static final int WORD_LENGTH = 5;
+    public static final int UNICODE_CODE_LIMIT = 500;
     public static FastDateFormat DATE_FORMAT = FastDateFormat.getInstance("HH:mm");
-    public static final int WORD_LIMIT = 1500;
     public static final Comparator<Pair<List<Word>, Long>> PAIR_COMPARATOR = Comparator.<Pair<List<Word>, Long>, Long>comparing(Pair::getRight)
             .reversed();
 
@@ -28,20 +30,26 @@ public class App {
         List<Future<List<Pair<List<Word>, Long>>>> futures = new ArrayList<>();
         long counter = 0L;
         for (int i = 0; i < words.size(); i++) {
-            for (int j = i + 1; j < words.size(); j++) {
+            for (int j = i + 1; j + 1 < words.size(); j++) {
                 final int finalJ = j;
                 Word word = words.get(i);
                 Word word1 = words.get(j);
-                if (!Sets.intersection(word.getChars(), word1.getChars()).isEmpty()) {
+                boolean stop = false;
+                for (int k = 0; k < App.WORD_LENGTH; k++) {
+                    if (word1.getCharacterSet().contains(word.getText().charAt(k))) {
+                        stop = true;
+                    }
+                }
+                if (stop) {
                     continue;
                 }
                 Callable<List<Pair<List<Word>, Long>>> callable = () -> {
-                    List<Word> sublist = words.subList(finalJ, words.size());
+                    List<Word> sublist = words.subList(finalJ+1, words.size());
                     return extracted(dictionary, List.of(word, word1), sublist);
                 };
                 Future<List<Pair<List<Word>, Long>>> future;
                 counter++;
-                if (counter % 100 == 0) {
+                if (counter % SPAM_LIMIT == 0) {
                     long finalCounter = counter;
                     future = executorService.submit(() -> {
                         StopWatch watch1 = new StopWatch();
@@ -75,7 +83,8 @@ public class App {
             }
         });
         watch.stop();
-        System.out.println("Time Elapsed: " + watch.formatTime());
+
+        System.out.printf("Time Elapsed: %s Threads: %d Word Limit: %d%n", watch.formatTime(), cores, WORD_LIMIT);
 
         result.stream().sorted(PAIR_COMPARATOR).limit(20L)
         .forEach(pair -> {
