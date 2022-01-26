@@ -1,114 +1,107 @@
 package org.adasla;
 
 import com.google.common.collect.MinMaxPriorityQueue;
-import org.apache.commons.lang3.time.FastDateFormat;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.*;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class App {
-    public static final int SPAM_LIMIT = 1000;
     public static final int WORD_LIMIT = 150000;
     public static final int WORD_LENGTH = 5;
     public static final int UNICODE_CODE_LIMIT = 500;
-    public static FastDateFormat DATE_FORMAT = FastDateFormat.getInstance("HH:mm");
     public static final Comparator<Pair<List<Word>, Long>> PAIR_COMPARATOR = Comparator.<Pair<List<Word>, Long>, Long>comparing(Pair::getRight)
             .reversed();
+    public static final int RESULT_LIMIT = 20;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         final Dictionary dictionary = new Dictionary(args[0]);
         final List<Word> words = dictionary.getWords();
 
-        StopWatch watch = new StopWatch();
-        watch.start();
-        int cores = Runtime.getRuntime().availableProcessors();
-        ExecutorService executorService = Executors.newFixedThreadPool(cores);
+        final int numberOfProcessors = Runtime.getRuntime().availableProcessors();
+        final ExecutorService threadPool = Executors.newFixedThreadPool(numberOfProcessors);
+        final ExecutorService singleThreadExecutor = Executors.newSingleThreadExecutor();
 
-        List<Future<List<Pair<List<Word>, Long>>>> futures = new ArrayList<>();
-        long counter = 0L;
-        for (int i = 0; i < words.size(); i++) {
-            for (int j = i + 1; j + 1 < words.size(); j++) {
-                final int finalJ = j;
-                Word word = words.get(i);
-                Word word1 = words.get(j);
-                boolean stop = false;
-                for (int k = 0; k < App.WORD_LENGTH; k++) {
-                    if (word1.getCharacterSet().contains(word.getText().charAt(k))) {
-                        stop = true;
-                    }
-                }
-                if (stop) {
-                    continue;
-                }
-                Callable<List<Pair<List<Word>, Long>>> callable = () -> {
-                    List<Word> sublist = words.subList(finalJ+1, words.size());
-                    return extracted(dictionary, List.of(word, word1), sublist);
-                };
-                Future<List<Pair<List<Word>, Long>>> future;
-                counter++;
-                if (counter % SPAM_LIMIT == 0) {
-                    long finalCounter = counter;
-                    future = executorService.submit(() -> {
-                        StopWatch watch1 = new StopWatch();
-                        watch1.start();
-                        List<Pair<List<Word>, Long>> list = callable.call();
-                        watch1.stop();
-                        Pair<List<Word>, Long> top = list.get(0);
-                        if (top != null) {
-                            String date = DATE_FORMAT.format(new Date());
-                            String duration = watch1.formatTime();
-                            System.out.printf("%d  %s  %s  %s  %d  %s%n",
-                                    finalCounter, date, duration, top.getLeft(), top.getRight(), Thread.currentThread().getName());
-                        }
-                        return list;
-                    });
-                } else {
-                    future = executorService.submit(callable);
-                }
+        final StopWatch wallClock = new StopWatch();
+        List<Pair<List<Word>, Long>> result = new ArrayList<>(); // write only from singleThreadExecutor
+        wallClock.start();
 
-                futures.add(future);
-            }
+        final int chunkSize = words.size() / (100);
+        for (int i = 0; i < words.size(); i += chunkSize) {
+            int start = i;
+            int end = Math.min(i + chunkSize, words.size());
+            threadPool.submit(() -> {
+                final StopWatch watch = new StopWatch();
+                watch.start();
+                MinMaxPriorityQueue<Pair<List<Word>, Long>> bestPairs = getBestPairs(dictionary, words, start, end);
+                watch.stop();
+                final String threadName = Thread.currentThread().getName();
+                singleThreadExecutor.submit(() -> {
+                    System.out.printf("Range %d -- %d Elapsed time %s %s%n", start, end, watch.formatTime(), threadName);
+                    result.addAll(bestPairs);
+                });
+            });
         }
 
-        List<Pair<List<Word>, Long>> result = new ArrayList<>();
-        futures.forEach(listFuture -> {
-            try {
-                List<Pair<List<Word>, Long>> pairs = listFuture.get();
-                result.addAll(pairs);
-            } catch (InterruptedException | ExecutionException e) {
-                e.printStackTrace();
-            }
-        });
-        watch.stop();
+        threadPool.shutdown();
+        //noinspection ResultOfMethodCallIgnored
+        threadPool.awaitTermination(10, TimeUnit.MINUTES);
+        singleThreadExecutor.shutdown();
+        //noinspection ResultOfMethodCallIgnored
+        singleThreadExecutor.awaitTermination(10, TimeUnit.MINUTES);
+        wallClock.stop();
+        result.sort(PAIR_COMPARATOR);
+        System.out.println("Wall clock: " + wallClock.formatTime());
+        print(result);
 
-        System.out.printf("Time Elapsed: %s Threads: %d Word Limit: %d%n", watch.formatTime(), cores, WORD_LIMIT);
+        MinMaxPriorityQueue<Pair<List<Word>, Long>> queue3 = getTuples(dictionary, words, result.subList(0, RESULT_LIMIT));
+        print(queue3);
 
-        result.stream().sorted(PAIR_COMPARATOR).limit(20L)
-        .forEach(pair -> {
-            List<Pair<List<Word>, Long>> w = pair.getLeft().stream().map(word -> {
-                List<Word> tuple = List.of(word);
-                long score = dictionary.calcBasicScore(tuple) + dictionary.calcScoreWithPosition(tuple);
-                return Pair.of(tuple, score);
-            })
-                    .sorted(PAIR_COMPARATOR)
-                    .collect(Collectors.toList());
-            System.out.println(w + " " + pair.getRight());
-        });
-        executorService.shutdown();
+        MinMaxPriorityQueue<Pair<List<Word>, Long>> queue4 = getTuples(dictionary, words, queue3);
+        print(queue4);
+
+        MinMaxPriorityQueue<Pair<List<Word>, Long>> queue5 = getTuples(dictionary, words, queue4);
+        print(queue5);
     }
 
-    private static List<Pair<List<Word>, Long>> extracted(Dictionary dictionary, List<Word> selectedWords, List<Word> words) {
-        MinMaxPriorityQueue<Pair<List<Word>, Long>> queue = MinMaxPriorityQueue.orderedBy(PAIR_COMPARATOR).maximumSize(20).create();
-        for (Word word : words) {
-            ArrayList<Word> tuple = new ArrayList<>(selectedWords);
-            tuple.add(word);
-            long score = dictionary.calcBasicScore(tuple) + dictionary.calcScoreWithPosition(tuple);
-            Pair<List<Word>, Long> pair = Pair.of(tuple, score);
-            queue.offer(pair);
+    private static MinMaxPriorityQueue<Pair<List<Word>, Long>> getTuples(Dictionary dictionary, List<Word> words, Collection<Pair<List<Word>, Long>> selectedWords) {
+        MinMaxPriorityQueue<Pair<List<Word>, Long>> queue3 = MinMaxPriorityQueue.orderedBy(PAIR_COMPARATOR).maximumSize(RESULT_LIMIT).create();
+        selectedWords.forEach(listLongPair -> combine(listLongPair.getLeft(), words.iterator(), dictionary::calcCombinedScore, queue3::offer));
+        return queue3;
+    }
+
+    private static MinMaxPriorityQueue<Pair<List<Word>, Long>> getBestPairs(Dictionary dictionary, List<Word> words, int start, int end) {
+        MinMaxPriorityQueue<Pair<List<Word>, Long>> queue = MinMaxPriorityQueue.orderedBy(PAIR_COMPARATOR).maximumSize(RESULT_LIMIT).create();
+        for (int i = start; i +1 < end; i++) {
+            Word word = words.get(i);
+            Iterator<Word> iterator = words.subList(i + 1, words.size()).iterator();
+            combine(List.of(word), iterator, dictionary::calcCombinedScore, queue::offer);
         }
-        return new ArrayList<>(queue);
+        return queue;
     }
+
+    private static void print(Collection<Pair<List<Word>, Long>> queue) {
+        queue.stream().limit(10).forEach(pair ->
+                System.out.printf("%s %d%n", pair.getLeft(), pair.getRight()));
+    }
+
+    private static void combine(List<Word> selectedWords,
+                                Iterator<Word> words,
+                                Function<List<Word>, Long> calcScore,
+                                Consumer<Pair<List<Word>, Long>> consumer) {
+        while (words.hasNext()) {
+            Word word = words.next();
+            List<Word> combinedWords = new ArrayList<>(selectedWords.size()+1);
+            combinedWords.addAll(selectedWords);
+            combinedWords.add(word);
+            long score = calcScore.apply(combinedWords);
+            consumer.accept(Pair.of(combinedWords, score));
+        }
+    }
+
 }

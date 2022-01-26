@@ -1,7 +1,11 @@
 package org.adasla;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Dictionary {
     private final List<Word> words;
@@ -57,7 +61,7 @@ public class Dictionary {
         return freq;
     }
 
-    public long calcBasicScore(List<Word> words) {
+    public long calcBasicScore(Iterable<Word> words) {
         long result = 0L;
         CharacterSet characterSet = new CharacterSet();
         for (Word word : words) {
@@ -70,7 +74,7 @@ public class Dictionary {
         return result;
     }
 
-    public long calcScoreWithPosition(List<Word> words) {
+    public long calcScoreWithPosition(Iterable<Word> words) {
         long result = 0L;
         CharacterSetWithPosition setWithPosition = new CharacterSetWithPosition();
         for (Word word : words) {
@@ -83,6 +87,10 @@ public class Dictionary {
             }
         }
         return result;
+    }
+
+    public long calcCombinedScore(List<Word> words) {
+        return calcBasicScore(words) + calcScoreWithPosition(words);
     }
 
     public List<Word> getWords() {

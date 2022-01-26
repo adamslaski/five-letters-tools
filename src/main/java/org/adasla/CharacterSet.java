@@ -37,4 +37,13 @@ public class CharacterSet {
     public List<Character> asList() {
         return chars;
     }
+
+    static public boolean intersectionIsEmpty(CharacterSet cs1, CharacterSet cs2) {
+        for (int k = 0; k < cs1.chars.size(); k++) {
+            if (cs2.contains(cs1.chars.get(k))) {
+                return false;
+            }
+        }
+        return true;
+    }
 }
