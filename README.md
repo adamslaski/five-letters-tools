@@ -12,7 +12,7 @@ acceptable words and generates suggestions for starting words.
 
 ```
 mvn package
-./target five-letters-tools-1.0-SNAPSHOT-jar-with-dependencies.jar  path/to/words/file
+java -jar ./target/five-letters-tools-1.0-SNAPSHOT-jar-with-dependencies.jar path/to/words/file
 ```
 It may takes couple of minutes to calculate the suggestions depending on number of words in the file.
 
