@@ -5,12 +5,13 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.adasla</groupId>
-  <artifactId>words-games-smasher</artifactId>
+  <artifactId>five-letters-tools</artifactId>
   <version>1.0-SNAPSHOT</version>
 
-  <name>words-games-smasher</name>
+  <name>five-letters-tools</name>
   <!-- FIXME change it to the project's website -->
   <url>http://www.example.com</url>
+  <description>Find best starting words for Wordle like games</description>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
