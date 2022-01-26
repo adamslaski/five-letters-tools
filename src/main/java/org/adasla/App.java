@@ -10,28 +10,30 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class App {
-    public static final int WORD_LIMIT = 150000;
     public static final int WORD_LENGTH = 5;
-    public static final int UNICODE_CODE_LIMIT = 500;
+    public static final int UNICODE_CODE_LIMIT = 500; // max unicode code supported
     public static final Comparator<Pair<List<Word>, Long>> PAIR_COMPARATOR = Comparator.<Pair<List<Word>, Long>, Long>comparing(Pair::getRight)
             .reversed();
     public static final int RESULT_LIMIT = 20;
 
     public static void main(String[] args) throws InterruptedException {
+        if (args.length != 1) {
+            System.out.println("This program expects 1 argument: path to list of words");
+        }
         final Dictionary dictionary = new Dictionary(args[0]);
         final List<Word> words = dictionary.getWords();
 
         final int numberOfProcessors = Runtime.getRuntime().availableProcessors();
         final ExecutorService threadPool = Executors.newFixedThreadPool(numberOfProcessors);
-        final ExecutorService singleThreadExecutor = Executors.newSingleThreadExecutor();
 
         final StopWatch wallClock = new StopWatch();
-        List<Pair<List<Word>, Long>> result = new ArrayList<>(); // write only from singleThreadExecutor
+        final List<Pair<List<Word>, Long>> result = Collections.synchronizedList(new ArrayList<>());
         wallClock.start();
 
-        final int chunkSize = words.size() / (100);
+        final int chunkSize = words.size() / (numberOfProcessors * 10); // equalize workloads
         for (int i = 0; i < words.size(); i += chunkSize) {
             int start = i;
             int end = Math.min(i + chunkSize, words.size());
@@ -40,20 +42,13 @@ public class App {
                 watch.start();
                 MinMaxPriorityQueue<Pair<List<Word>, Long>> bestPairs = getBestPairs(dictionary, words, start, end);
                 watch.stop();
-                final String threadName = Thread.currentThread().getName();
-                singleThreadExecutor.submit(() -> {
-                    System.out.printf("Range %d -- %d Elapsed time %s %s%n", start, end, watch.formatTime(), threadName);
-                    result.addAll(bestPairs);
-                });
+                result.addAll(bestPairs);
             });
         }
 
         threadPool.shutdown();
         //noinspection ResultOfMethodCallIgnored
         threadPool.awaitTermination(10, TimeUnit.MINUTES);
-        singleThreadExecutor.shutdown();
-        //noinspection ResultOfMethodCallIgnored
-        singleThreadExecutor.awaitTermination(10, TimeUnit.MINUTES);
         wallClock.stop();
         result.sort(PAIR_COMPARATOR);
         System.out.println("Wall clock: " + wallClock.formatTime());
@@ -86,8 +81,11 @@ public class App {
     }
 
     private static void print(Collection<Pair<List<Word>, Long>> queue) {
-        queue.stream().limit(10).forEach(pair ->
-                System.out.printf("%s %d%n", pair.getLeft(), pair.getRight()));
+        queue.stream().limit(10).forEach(pair -> {
+            List<Word> left = pair.getLeft();
+            String tuple = left.stream().map(Word::getText).collect(Collectors.joining(" "));
+            System.out.printf("%s %d%n", tuple, pair.getRight());
+        });
     }
 
     private static void combine(List<Word> selectedWords,

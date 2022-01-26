@@ -29,9 +29,6 @@ public class Dictionary {
             String line;
             while ((line = br.readLine()) != null) {
                 words.add(new Word(line));
-                if (words.size() > App.WORD_LIMIT) {
-                    break;
-                }
             }
         } catch (IOException e) {
             e.printStackTrace();
